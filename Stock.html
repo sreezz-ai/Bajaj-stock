@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Bajaj Parts Scanner — Barcode & QR Stock Counter</title>
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- html5-qrcode (v2.3.8) for 1D Barcodes (Code-128, Code-39, EAN, UPC, ITF) & QR Codes -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+
+  <!-- SheetJS (xlsx v0.18.5) for Real Excel (.xlsx) Export & Import -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            bajaj: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#0ea5e9',
+              600: '#0284c7',
+              700: '#0369a1',
+              900: '#0c4a6e',
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #0b1120;
+      color: #f8fafc;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Clean Scanner Video Container */
+    #qr-reader {
+      border: none !important;
+      width: 100% !important;
+      background: #020617;
+    }
+
+    #qr-reader video {
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover !important;
+      border-radius: 0.75rem;
+    }
+
+    /* Hide library clutter */
+    #qr-reader__dashboard_section_csr span,
+    #qr-reader__status_span,
+    #qr-reader img[alt="Info icon"] {
+      display: none !important;
+    }
+
+    @keyframes scanSuccessFlash {
+      0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.9); border-color: #10b981; }
+      60% { box-shadow: 0 0 0 14px rgba(16, 185, 129, 0); border-color: #10b981; }
+      100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+
+    .scan-flash {
+      animation: scanSuccessFlash 0.6s ease-out;
+    }
+
+    @keyframes rowPulse {
+      0% { background-color: rgba(14, 165, 233, 0.25); }
+      100% { background-color: transparent; }
+    }
+
+    .row-updated {
+      animation: rowPulse 1.5s ease-out;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-sky-500 selection:text-white">
+
+  <!-- Sticky Mobile-First Top Header -->
+  <header class="sticky top-0 z-30 bg-slate-950/95 backdrop-blur border-b border-slate-800">
+    <div class="max-w-3xl mx-auto px-3.5 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
+      <!-- App Title & Bajaj Parts Badge -->
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-sky-600 flex items-center justify-center shrink-0 shadow-lg shadow-sky-950">
+          <svg class="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 7V5a2 2 0 012-2h2m10 0h2a2 2 0 012 2v2m0 10v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2M7 8v8m4-8v8m4-8v8m3-8v8" />
+          </svg>
+        </div>
+        <div class="truncate">
+          <h1 class="font-extrabold text-sm sm:text-base tracking-tight text-white truncate">Bajaj Parts Stock</h1>
+          <p class="text-[11px] text-slate-400 truncate">Barcode &amp; QR Quantity Counter</p>
+        </div>
+      </div>
+
+      <!-- Primary Excel Export & Sound Toggle -->
+      <div class="flex items-center gap-2 shrink-0">
+        <button id="soundToggleBtn" onclick="toggleSound()" title="Toggle Scan Beep"
+          class="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white active:scale-95 transition cursor-pointer">
+          <svg id="soundOnIcon" class="w-4 h-4 sm:w-5 sm:h-5 text-sky-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+          </svg>
+          <svg id="soundOffIcon" class="w-4 h-4 sm:w-5 sm:h-5 hidden text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+          </svg>
+        </button>
+
+        <button onclick="exportToExcel()"
+          class="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs sm:text-sm shadow-lg shadow-emerald-950/60 transition cursor-pointer">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          <span>Export Excel</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- HTTPS Camera Requirement Notice (Shown only on non-HTTPS / file://) -->
+  <div id="httpsWarningBanner" class="hidden bg-amber-950/90 border-b border-amber-700/60 px-4 py-2.5 text-amber-200 text-xs">
+    <div class="max-w-3xl mx-auto flex items-center justify-between gap-2">
+      <span>
+        <strong>Phone Camera Tip:</strong> Mobile browsers require <strong>HTTPS</strong> for live camera access. Upload this <code class="bg-amber-900/80 px-1 rounded">index.html</code> to <strong>Netlify</strong> for instant camera scanning, or use manual entry below.
+      </span>
+      <button onclick="this.parentElement.parentElement.classList.add('hidden')" class="font-bold text-amber-300 px-2">✕</button>
+    </div>
+  </div>
+
+  <!-- Toast Feedback Container -->
+  <div id="toastContainer" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 w-full max-w-sm px-4 pointer-events-none"></div>
+
+  <!-- Main Single-Column Mobile-First Container -->
+  <main class="flex-1 max-w-3xl w-full mx-auto px-3.5 sm:px-6 py-4 space-y-4">
+
+    <!-- 2-Metric Summary Strip: Total Unique Parts & Total Quantity -->
+    <section class="grid grid-cols-2 gap-3" aria-label="Stock Totals">
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 sm:p-4 flex items-center justify-between">
+        <div>
+          <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Unique Parts</p>
+          <p id="totalUniqueParts" class="text-2xl sm:text-3xl font-extrabold text-white font-mono mt-0.5">0</p>
+        </div>
+        <div class="w-10 h-10 rounded-xl bg-sky-500/15 text-sky-400 flex items-center justify-center">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+          </svg>
+        </div>
+      </div>
+
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 sm:p-4 flex items-center justify-between">
+        <div>
+          <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Total Quantity</p>
+          <p id="totalStockQty" class="text-2xl sm:text-3xl font-extrabold text-emerald-400 font-mono mt-0.5">0</p>
+        </div>
+        <div class="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <!-- Phone Camera Barcode & QR Scanner Card -->
+    <section id="scannerCard" class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl transition-all">
+      <!-- Scan Action Mode & Step Multiplier Bar -->
+      <div class="p-3.5 sm:p-4 border-b border-slate-800 space-y-3">
+        <div class="grid grid-cols-3 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <button type="button" data-mode="add" onclick="setScanMode('add')"
+            class="mode-btn py-2.5 px-2 rounded-lg text-xs sm:text-sm font-bold transition cursor-pointer bg-emerald-600 text-white shadow">
+            + Add Stock
+          </button>
+          <button type="button" data-mode="deduct" onclick="setScanMode('deduct')"
+            class="mode-btn py-2.5 px-2 rounded-lg text-xs sm:text-sm font-bold transition cursor-pointer text-slate-400 hover:text-white">
+            &minus; Deduct
+          </button>
+          <button type="button" data-mode="set" onclick="setScanMode('set')"
+            class="mode-btn py-2.5 px-2 rounded-lg text-xs sm:text-sm font-bold transition cursor-pointer text-slate-400 hover:text-white">
+            Set Qty
+          </button>
+        </div>
+
+        <!-- Quick Step Quantity Selector (+1, +5, +10, Custom) -->
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs font-semibold text-slate-400">Qty per Scan:</span>
+          <div class="flex items-center gap-1.5">
+            <button type="button" onclick="setStepQty(1)" class="step-pill px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-sky-600 text-white cursor-pointer">1</button>
+            <button type="button" onclick="setStepQty(5)" class="step-pill px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 cursor-pointer">5</button>
+            <button type="button" onclick="setStepQty(10)" class="step-pill px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 cursor-pointer">10</button>
+            <input id="stepQtyInput" type="number" min="1" max="9999" value="1" oninput="syncStepPills()"
+              aria-label="Custom scan quantity"
+              class="w-16 py-1.5 px-2 text-center text-xs font-mono font-bold bg-slate-950 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-sky-500" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Camera Viewport -->
+      <div class="relative bg-slate-950 min-h-[220px] sm:min-h-[260px] flex flex-col items-center justify-center">
+        <div id="qr-reader" class="w-full"></div>
+
+        <!-- Idle Camera Placeholder -->
+        <div id="cameraIdlePlaceholder" class="p-6 text-center space-y-3">
+          <div class="w-14 h-14 mx-auto rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-sky-400">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </div>
+          <div>
+            <p class="text-sm font-bold text-white">Scan Bajaj Part Barcode or QR</p>
+            <p class="text-xs text-slate-400 mt-1 max-w-xs mx-auto">Supports Code-128, Code-39, EAN-13, UPC &amp; QR labels on spare part packets.</p>
+          </div>
+        </div>
+
+        <!-- Live Last Scanned Pill Overlay -->
+        <div id="lastScanOverlay" class="hidden absolute bottom-3 left-3 right-3 bg-slate-950/90 backdrop-blur border border-emerald-500/50 rounded-xl px-3.5 py-2.5 flex items-center justify-between shadow-lg">
+          <div class="min-w-0 pr-2">
+            <p id="lastScanPartNo" class="font-mono font-bold text-xs text-emerald-400 truncate">PART-000</p>
+            <p id="lastScanPartName" class="text-xs text-slate-200 truncate">Part Name</p>
+          </div>
+          <span id="lastScanQtyBadge" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 font-mono font-extrabold text-xs shrink-0">
+            Qty: 1
+          </span>
+        </div>
+      </div>
+
+      <!-- Camera Controls Bar: Start/Stop, Torch/Flashlight, Switch Camera -->
+      <div class="p-3.5 sm:p-4 bg-slate-900 border-t border-slate-800 space-y-2.5">
+        <div class="flex items-center gap-2">
+          <button id="startCamBtn" onclick="startScanner()"
+            class="flex-1 py-3 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 active:scale-[0.99] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-sky-950/50 transition cursor-pointer">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            <span>Start Phone Camera</span>
+          </button>
+
+          <button id="stopCamBtn" onclick="stopScanner()"
+            class="hidden flex-1 py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-[0.99] text-white font-bold text-sm flex items-center justify-center gap-2 transition cursor-pointer">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+            </svg>
+            <span>Stop Camera</span>
+          </button>
+
+          <!-- Torch / Flashlight Toggle (Shown when device camera supports torch) -->
+          <button id="torchBtn" onclick="toggleTorch()" title="Toggle Flashlight"
+            class="hidden py-3 px-3.5 rounded-xl bg-slate-800 border border-slate-700 text-amber-400 hover:bg-slate-700 active:scale-95 transition cursor-pointer">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </button>
+
+          <!-- Switch Front/Rear Camera (Shown when multiple cameras exist) -->
+          <button id="switchCamBtn" onclick="cycleCamera()" title="Switch Camera"
+            class="hidden py-3 px-3.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 active:scale-95 transition cursor-pointer">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Manual Part Number / USB Barcode Gun Input Fallback -->
+        <form onsubmit="handleManualBarcodeSubmit(event)" class="flex gap-2">
+          <input id="manualBarcodeInput" type="text" placeholder="Type / paste Bajaj Part No. (e.g. JL551402)"
+            class="flex-1 min-w-0 px-3.5 py-2.5 text-sm font-mono bg-slate-950 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-sky-500" />
+          <button type="submit"
+            class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold text-xs sm:text-sm shrink-0 transition cursor-pointer">
+            + Enter
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Scanned Bajaj Parts & Quantities List -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+      <!-- List Header & Excel Import / Reset Controls -->
+      <div class="p-3.5 sm:p-4 border-b border-slate-800 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 class="font-bold text-white text-base">Scanned Parts &amp; Quantities</h2>
+            <p class="text-[11px] text-slate-400">Tap any part name to edit &bull; Saved automatically on device</p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <!-- Import Master Parts List (.xlsx, .xls, .csv) -->
+            <label for="excelImportInput"
+              class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer">
+              <svg class="w-3.5 h-3.5 text-sky-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              <span>Import Excel</span>
+            </label>
+            <input id="excelImportInput" type="file" accept=".xlsx,.xls,.csv" class="hidden" onchange="handleExcelImport(event)" />
+
+            <button onclick="confirmResetStock()"
+              class="px-3 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/70 border border-rose-800/60 text-rose-300 text-xs font-semibold transition cursor-pointer">
+              Reset
+            </button>
+          </div>
+        </div>
+
+        <!-- Search Filter -->
+        <div class="relative">
+          <svg class="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input id="searchPartsInput" type="text" oninput="renderPartsList()" placeholder="Search scanned part number or name..."
+            class="w-full pl-10 pr-3.5 py-2.5 text-sm bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-sky-500" />
+        </div>
+      </div>
+
+      <!-- Parts List Items -->
+      <div id="partsListContainer" class="divide-y divide-slate-800/80">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <!-- Empty State -->
+      <div id="emptyPartsState" class="py-12 px-6 text-center space-y-2.5">
+        <div class="w-12 h-12 mx-auto rounded-2xl bg-slate-950 border border-slate-800 text-slate-500 flex items-center justify-center">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+        </div>
+        <p class="text-sm font-semibold text-slate-300">No Bajaj parts scanned yet</p>
+        <p class="text-xs text-slate-500 max-w-xs mx-auto">Tap <strong>Start Phone Camera</strong> above and point at the barcode or QR sticker on any Bajaj spare part.</p>
+      </div>
+    </section>
+
+    <!-- Collapsible Netlify Upload Tip Banner -->
+    <details class="bg-slate-900/60 border border-slate-800/80 rounded-2xl text-xs text-slate-400">
+      <summary class="px-4 py-3 font-semibold text-slate-300 cursor-pointer select-none flex items-center justify-between">
+        <span>How to upload this app to Netlify (Free HTTPS for Phone Camera)</span>
+        <span class="text-sky-400 text-[11px]">Tap to view</span>
+      </summary>
+      <div class="px-4 pb-3.5 pt-1 space-y-1.5 border-t border-slate-800/60 text-slate-400 leading-relaxed">
+        <p>1. Save this file as <code class="text-sky-300 bg-slate-950 px-1.5 py-0.5 rounded">index.html</code> inside a new folder on your computer or phone.</p>
+        <p>2. Open <strong class="text-slate-200">app.netlify.com/drop</strong> in your browser and drag-and-drop that folder.</p>
+        <p>3. Netlify instantly gives you a live <code class="text-emerald-300 bg-slate-950 px-1.5 py-0.5 rounded">https://...netlify.app</code> link so your phone camera can scan barcodes anywhere in your store or warehouse.</p>
+      </div>
+    </details>
+  </main>
+
+  <!-- Quick Modal: Name New Scanned Bajaj Part (Optional — auto-dismissible or saveable) -->
+  <div id="partNameModal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-end sm:items-center justify-center p-3 sm:p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <span class="px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 font-mono text-[11px] font-bold">NEW PART SCANNED</span>
+          <h3 id="modalPartNoDisplay" class="font-mono font-extrabold text-base text-white mt-1">JL551402</h3>
+        </div>
+        <button onclick="closePartNameModal()" class="text-slate-400 hover:text-white font-bold text-lg px-2">✕</button>
+      </div>
+
+      <form onsubmit="savePartNameFromModal(event)" class="space-y-3">
+        <div>
+          <label for="modalPartNameInput" class="block text-xs font-semibold text-slate-300 mb-1">
+            Bajaj Part Name / Description
+          </label>
+          <input id="modalPartNameInput" type="text" placeholder="e.g. Clutch Plate Set Pulsar 150 / Oil Filter"
+            class="w-full px-3.5 py-3 text-sm bg-slate-950 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-sky-500" />
+          <p class="text-[11px] text-slate-400 mt-1">Saved to your part catalog so future scans auto-fill this name.</p>
+        </div>
+
+        <div class="flex gap-2 pt-1">
+          <button type="button" onclick="closePartNameModal()"
+            class="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer">
+            Skip for Now
+          </button>
+          <button type="submit"
+            class="flex-1 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold shadow cursor-pointer">
+            Save Part Name
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Custom Confirmation Dialog -->
+  <div id="confirmDialog" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4">
+      <h3 id="confirmTitle" class="font-bold text-base text-white">Confirm</h3>
+      <p id="confirmMsg" class="text-xs sm:text-sm text-slate-300">Are you sure?</p>
+      <div class="flex justify-end gap-2">
+        <button onclick="closeConfirmDialog()" class="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold cursor-pointer">Cancel</button>
+        <button id="confirmOkBtn" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold cursor-pointer">Yes, Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * ============================================================================
+     * Bajaj Parts Barcode & QR Stock Counter
+     * Focused strictly on Part Number, Part Name, Stock Quantity & Excel Export
+     * ============================================================================
+     */
+    const STOCK_STORAGE_KEY = 'bajaj_parts_stock_v1';
+    const CATALOG_STORAGE_KEY = 'bajaj_parts_catalog_v1'; // Remembers PartNo -> PartName mappings
+    const SETTINGS_STORAGE_KEY = 'bajaj_parts_settings_v1';
+
+    let stockItems = [];      // [{ partNo, partName, qty, lastUpdated }]
+    let partCatalog = {};     // { [partNo]: partName }
+    let scanHistoryLog = [];  // [{ time, partNo, partName, action, change, resultingQty }]
+    let soundEnabled = true;
+
+    let currentMode = 'add';  // 'add' | 'deduct' | 'set'
+    let lastUpdatedPartNo = null;
+    let activeModalPartNo = null;
+
+    // Camera & Barcode Scanner State
+    let html5QrCode = null;
+    let isScanning = false;
+    let camerasList = [];
+    let currentCameraIndex = 0;
+    let torchOn = false;
+    let lastCodeScanned = '';
+    let lastCodeTime = 0;
+    const DEBOUNCE_MS = 1400;
+
+    window.addEventListener('DOMContentLoaded', () => {
+      checkSecureOrigin();
+      loadState();
+      renderPartsList();
+    });
+
+    function checkSecureOrigin() {
+      const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+      if (window.location.protocol !== 'https:' && !isLocal) {
+        document.getElementById('httpsWarningBanner').classList.remove('hidden');
+      }
+    }
+
+    function loadState() {
+      try {
+        const savedStock = localStorage.getItem(STOCK_STORAGE_KEY);
+        if (savedStock) stockItems = JSON.parse(savedStock);
+
+        const savedCatalog = localStorage.getItem(CATALOG_STORAGE_KEY);
+        if (savedCatalog) partCatalog = JSON.parse(savedCatalog);
+
+        const savedSettings = localStorage.getItem(SETTINGS_STORAGE_KEY);
+        if (savedSettings) {
+          const parsed = JSON.parse(savedSettings);
+          soundEnabled = parsed.soundEnabled !== false;
+        }
+        updateSoundIcon();
+      } catch (e) {
+        console.error('Failed to load saved inventory:', e);
+      }
+    }
+
+    function saveState() {
+      try {
+        localStorage.setItem(STOCK_STORAGE_KEY, JSON.stringify(stockItems));
+        localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(partCatalog));
+      } catch (e) {
+        showToast('Device storage full — please export Excel now.', 'error');
+      }
+    }
+
+    /**
+     * ============================================================================
+     * Scan Mode & Step Quantity Controls
+     * ============================================================================
+     */
+    function setScanMode(mode) {
+      currentMode = mode;
+      document.querySelectorAll('.mode-btn').forEach((btn) => {
+        const m = btn.getAttribute('data-mode');
+        btn.className = 'mode-btn py-2.5 px-2 rounded-lg text-xs sm:text-sm font-bold transition cursor-pointer';
+        if (m === mode) {
+          if (mode === 'add') btn.classList.add('bg-emerald-600', 'text-white', 'shadow');
+          if (mode === 'deduct') btn.classList.add('bg-rose-600', 'text-white', 'shadow');
+          if (mode === 'set') btn.classList.add('bg-sky-600', 'text-white', 'shadow');
+        } else {
+          btn.classList.add('text-slate-400', 'hover:text-white');
+        }
+      });
+    }
+
+    function setStepQty(val) {
+      document.getElementById('stepQtyInput').value = val;
+      syncStepPills();
+    }
+
+    function syncStepPills() {
+      const currentVal = parseInt(document.getElementById('stepQtyInput').value, 10);
+      document.querySelectorAll('.step-pill').forEach((pill) => {
+        const pillVal = parseInt(pill.textContent, 10);
+        if (pillVal === currentVal) {
+          pill.className = 'step-pill px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-sky-600 text-white cursor-pointer';
+        } else {
+          pill.className = 'step-pill px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 cursor-pointer';
+        }
+      });
+    }
+
+    /**
+     * ============================================================================
+     * Phone Camera Barcode & QR Scanner (html5-qrcode)
+     * ============================================================================
+     */
+    async function startScanner() {
+      if (isScanning) return;
+
+      try {
+        if (!html5QrCode) {
+          // Support both 1D Barcodes on Bajaj spare part boxes & 2D QR codes
+          const formatsToSupport = [
+            Html5QrcodeSupportedFormats.QR_CODE,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.CODE_93,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.ITF,
+            Html5QrcodeSupportedFormats.DATA_MATRIX
+          ];
+          html5QrCode = new Html5Qrcode('qr-reader', {
+            formatsToSupport,
+            verbose: false
+          });
+        }
+
+        if (camerasList.length === 0) {
+          try {
+            camerasList = await Html5Qrcode.getCameras();
+            // Default to back/environment camera on phones
+            const backIdx = camerasList.findIndex((c) => /back|rear|environment/i.test(c.label));
+            if (backIdx !== -1) currentCameraIndex = backIdx;
+            if (camerasList.length > 1) {
+              document.getElementById('switchCamBtn').classList.remove('hidden');
+            }
+          } catch (camErr) {
+            console.warn('Camera enumeration fallback:', camErr);
+          }
+        }
+
+        const cameraConstraint = camerasList.length > 0
+          ? { deviceId: { exact: camerasList[currentCameraIndex].id } }
+          : { facingMode: 'environment' };
+
+        document.getElementById('cameraIdlePlaceholder').classList.add('hidden');
+        document.getElementById('startCamBtn').classList.add('hidden');
+        document.getElementById('stopCamBtn').classList.remove('hidden');
+
+        await html5QrCode.start(
+          cameraConstraint,
+          {
+            fps: 15,
+            qrbox: (viewfinderWidth, viewfinderHeight) => {
+              // Wide rectangular scan box ideal for 1D Bajaj part barcodes AND square QR codes
+              const width = Math.min(Math.floor(viewfinderWidth * 0.84), 320);
+              const height = Math.min(Math.floor(viewfinderHeight * 0.58), 190);
+              return { width: Math.max(180, width), height: Math.max(120, height) };
+            }
+          },
+          (decodedText) => {
+            processScannedCode(decodedText, false);
+          },
+          () => {
+            // Ignore frame-by-frame scan misses
+          }
+        );
+
+        isScanning = true;
+        torchOn = false;
+        checkTorchSupport();
+      } catch (err) {
+        console.error('Scanner start error:', err);
+        document.getElementById('cameraIdlePlaceholder').classList.remove('hidden');
+        document.getElementById('startCamBtn').classList.remove('hidden');
+        document.getElementById('stopCamBtn').classList.add('hidden');
+        showToast('Camera blocked or unavailable. Allow camera permission or use HTTPS.', 'error');
+      }
+    }
+
+    async function stopScanner() {
+      if (!html5QrCode || !isScanning) return;
+      try {
+        await html5QrCode.stop();
+        isScanning = false;
+        torchOn = false;
+        document.getElementById('torchBtn').classList.add('hidden');
+        document.getElementById('cameraIdlePlaceholder').classList.remove('hidden');
+        document.getElementById('startCamBtn').classList.remove('hidden');
+        document.getElementById('stopCamBtn').classList.add('hidden');
+      } catch (e) {
+        console.error('Stop scanner error:', e);
+      }
+    }
+
+    async function cycleCamera() {
+      if (camerasList.length <= 1) return;
+      currentCameraIndex = (currentCameraIndex + 1) % camerasList.length;
+      if (isScanning) {
+        await stopScanner();
+        await startScanner();
+      }
+    }
+
+    function checkTorchSupport() {
+      try {
+        const capabilities = html5QrCode.getRunningTrackCapabilities();
+        if (capabilities && capabilities.torch) {
+          document.getElementById('torchBtn').classList.remove('hidden');
+        } else {
+          document.getElementById('torchBtn').classList.add('hidden');
+        }
+      } catch (e) {
+        document.getElementById('torchBtn').classList.add('hidden');
+      }
+    }
+
+    async function toggleTorch() {
+      if (!html5QrCode || !isScanning) return;
+      try {
+        torchOn = !torchOn;
+        await html5QrCode.applyVideoConstraints({
+          advanced: [{ torch: torchOn }]
+        });
+        const btn = document.getElementById('torchBtn');
+        btn.classList.toggle('bg-amber-500', torchOn);
+        btn.classList.toggle('text-slate-950', torchOn);
+        btn.classList.toggle('bg-slate-800', !torchOn);
+        btn.classList.toggle('text-amber-400', !torchOn);
+      } catch (e) {
+        showToast('Flashlight not supported on this lens.', 'error');
+      }
+    }
+
+    /**
+     * ============================================================================
+     * Bajaj Barcode / QR Payload Extraction & Stock Quantity Calculation
+     * ============================================================================
+     */
+    function parseBajajCode(rawText) {
+      const clean = String(rawText || '').trim();
+      let partNo = clean;
+      let embeddedName = '';
+
+      // Handle JSON QR labels if present (e.g. {"partNo":"JL551402","name":"Clutch Plate"})
+      if (clean.startsWith('{') && clean.endsWith('}')) {
+        try {
+          const obj = JSON.parse(clean);
+          partNo = String(obj.partNo || obj.part || obj.sku || obj.code || obj.id || clean).trim();
+          embeddedName = String(obj.partName || obj.name || obj.desc || obj.description || '').trim();
+        } catch (e) {
+          // Keep raw string
+        }
+      } else if (clean.includes('|') || clean.includes(';')) {
+        // Handle delimited QR labels (e.g. JL551402|Clutch Plate Set)
+        const segments = clean.split(/[|;]/).map((s) => s.trim()).filter(Boolean);
+        if (segments.length >= 2) {
+          partNo = segments[0].replace(/^(part|sku|code)\s*:\s*/i, '');
+          embeddedName = segments[1].replace(/^(name|desc)\s*:\s*/i, '');
+        }
+      }
+
+      return { partNo: partNo.toUpperCase(), embeddedName };
+    }
+
+    function handleManualBarcodeSubmit(e) {
+      e.preventDefault();
+      const input = document.getElementById('manualBarcodeInput');
+      const val = input.value.trim();
+      if (!val) return;
+      input.value = '';
+      processScannedCode(val, true);
+    }
+
+    function processScannedCode(rawText, skipDebounce = false) {
+      const now = Date.now();
+      if (!skipDebounce && rawText === lastCodeScanned && now - lastCodeTime < DEBOUNCE_MS) {
+        return;
+      }
+      lastCodeScanned = rawText;
+      lastCodeTime = now;
+
+      const { partNo, embeddedName } = parseBajajCode(rawText);
+      if (!partNo) return;
+
+      const stepQty = Math.max(1, parseInt(document.getElementById('stepQtyInput').value, 10) || 1);
+      const timestamp = new Date().toLocaleString([], {
+        year: 'numeric', month: 'short', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+
+      // Flash scanner card border + beep + phone vibrate
+      const card = document.getElementById('scannerCard');
+      card.classList.remove('scan-flash');
+      void card.offsetWidth;
+      card.classList.add('scan-flash');
+      triggerScanFeedback(false);
+
+      const existingIdx = stockItems.findIndex((item) => item.partNo === partNo);
+
+      if (existingIdx !== -1) {
+        const item = stockItems[existingIdx];
+        if (embeddedName && (!item.partName || item.partName === 'Unnamed Bajaj Part')) {
+          item.partName = embeddedName;
+          partCatalog[partNo] = embeddedName;
+        }
+
+        let changeLabel = '';
+        if (currentMode === 'add') {
+          item.qty += stepQty;
+          changeLabel = `+${stepQty}`;
+        } else if (currentMode === 'deduct') {
+          const deducted = Math.min(item.qty, stepQty);
+          item.qty = Math.max(0, item.qty - stepQty);
+          changeLabel = `-${deducted}`;
+        } else if (currentMode === 'set') {
+          item.qty = stepQty;
+          changeLabel = `=${stepQty}`;
+        }
+
+        item.lastUpdated = timestamp;
+        // Move most recently scanned part to the top for instant visibility on phone
+        stockItems.splice(existingIdx, 1);
+        stockItems.unshift(item);
+
+        lastUpdatedPartNo = partNo;
+        logScanEvent(partNo, item.partName, currentMode, changeLabel, item.qty, timestamp);
+        showLastScanOverlay(item.partNo, item.partName, item.qty, changeLabel);
+        saveState();
+        renderPartsList();
+      } else {
+        // Brand-new Bajaj Part scanned!
+        const resolvedName = embeddedName || partCatalog[partNo] || '';
+        const initialQty = currentMode === 'deduct' ? 0 : stepQty;
+
+        const newItem = {
+          partNo,
+          partName: resolvedName || 'Unnamed Bajaj Part',
+          qty: initialQty,
+          lastUpdated: timestamp
+        };
+
+        if (resolvedName) {
+          partCatalog[partNo] = resolvedName;
+        }
+
+        stockItems.unshift(newItem);
+        lastUpdatedPartNo = partNo;
+        logScanEvent(partNo, newItem.partName, 'New Scan', `+${initialQty}`, initialQty, timestamp);
+        showLastScanOverlay(newItem.partNo, newItem.partName, newItem.qty, `+${initialQty}`);
+        saveState();
+        renderPartsList();
+
+        // If part name is not yet known in catalog, prompt user cleanly so Excel export has full description
+        if (!resolvedName) {
+          openPartNameModal(partNo, '');
+        }
+      }
+    }
+
+    function logScanEvent(partNo, partName, action, change, resultingQty, time) {
+      scanHistoryLog.unshift({ time, partNo, partName, action: action.toUpperCase(), change, resultingQty });
+      if (scanHistoryLog.length > 250) scanHistoryLog.pop();
+    }
+
+    function showLastScanOverlay(partNo, partName, totalQty, deltaStr) {
+      const overlay = document.getElementById('lastScanOverlay');
+      document.getElementById('lastScanPartNo').textContent = `${partNo} (${deltaStr})`;
+      document.getElementById('lastScanPartName').textContent = partName;
+      document.getElementById('lastScanQtyBadge').textContent = `Stock: ${totalQty}`;
+      overlay.classList.remove('hidden');
+    }
+
+    /**
+     * ============================================================================
+     * Render Parts & Quantity List (Mobile-Optimized Cards)
+     * ============================================================================
+     */
+    function renderPartsList() {
+      const totalUnique = stockItems.length;
+      const totalUnits = stockItems.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
+
+      document.getElementById('totalUniqueParts').textContent = totalUnique.toLocaleString();
+      document.getElementById('totalStockQty').textContent = totalUnits.toLocaleString();
+
+      const query = document.getElementById('searchPartsInput').value.trim().toLowerCase();
+      const filtered = stockItems.filter((item) =>
+        !query ||
+        item.partNo.toLowerCase().includes(query) ||
+        item.partName.toLowerCase().includes(query)
+      );
+
+      const container = document.getElementById('partsListContainer');
+      const emptyState = document.getElementById('emptyPartsState');
+
+      if (filtered.length === 0) {
+        container.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+
+      container.innerHTML = filtered.map((item) => {
+        const highlight = item.partNo === lastUpdatedPartNo ? 'row-updated' : '';
+        const isUnnamed = !item.partName || item.partName === 'Unnamed Bajaj Part';
+
+        return `
+          <div class="p-3.5 sm:p-4 flex items-center justify-between gap-3 ${highlight}">
+            <!-- Left: Part Number & Editable Part Name -->
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <span class="font-mono font-extrabold text-sm sm:text-base text-sky-400 tracking-tight truncate">
+                  ${escapeHtml(item.partNo)}
+                </span>
+              </div>
+              <button type="button" onclick="openPartNameModal('${escapeAttr(item.partNo)}', '${escapeAttr(isUnnamed ? '' : item.partName)}')"
+                class="mt-0.5 text-left text-xs sm:text-sm ${isUnnamed ? 'text-amber-400 italic' : 'text-slate-200 font-medium'} hover:underline truncate max-w-full block cursor-pointer">
+                ${escapeHtml(item.partName)} ✎
+              </button>
+              <p class="text-[10px] text-slate-500 mt-0.5">${escapeHtml(item.lastUpdated || '')}</p>
+            </div>
+
+            <!-- Right: Fast - / Qty / + Controls & Delete -->
+            <div class="flex items-center gap-1.5 shrink-0">
+              <button type="button" onclick="adjustQty('${escapeAttr(item.partNo)}', -1)"
+                aria-label="Decrease quantity"
+                class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-800 hover:bg-rose-900/70 active:scale-95 text-white font-bold text-lg flex items-center justify-center border border-slate-700 cursor-pointer">
+                &minus;
+              </button>
+
+              <input type="number" min="0" value="${item.qty}"
+                onchange="setExactQty('${escapeAttr(item.partNo)}', this.value)"
+                aria-label="Quantity for ${escapeAttr(item.partNo)}"
+                class="w-14 sm:w-16 h-9 sm:h-10 text-center font-mono font-extrabold text-sm sm:text-base bg-slate-950 border border-slate-700 rounded-xl text-emerald-400 focus:outline-none focus:border-sky-500" />
+
+              <button type="button" onclick="adjustQty('${escapeAttr(item.partNo)}', 1)"
+                aria-label="Increase quantity"
+                class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-800 hover:bg-emerald-900/70 active:scale-95 text-white font-bold text-lg flex items-center justify-center border border-slate-700 cursor-pointer">
+                +
+              </button>
+
+              <button type="button" onclick="removePart('${escapeAttr(item.partNo)}')"
+                title="Remove part"
+                class="ml-1 p-2 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-950/50 transition cursor-pointer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      lastUpdatedPartNo = null;
+    }
+
+    function adjustQty(partNo, delta) {
+      const item = stockItems.find((i) => i.partNo === partNo);
+      if (!item) return;
+      item.qty = Math.max(0, item.qty + delta);
+      item.lastUpdated = new Date().toLocaleString([], {
+        year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit'
+      });
+      saveState();
+      renderPartsList();
+    }
+
+    function setExactQty(partNo, rawVal) {
+      const item = stockItems.find((i) => i.partNo === partNo);
+      if (!item) return;
+      const parsed = parseInt(rawVal, 10);
+      item.qty = isNaN(parsed) || parsed < 0 ? 0 : parsed;
+      item.lastUpdated = new Date().toLocaleString([], {
+        year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit'
+      });
+      saveState();
+      renderPartsList();
+    }
+
+    function removePart(partNo) {
+      openConfirmDialog('Delete Part', `Remove "${partNo}" from the scanned list?`, () => {
+        stockItems = stockItems.filter((i) => i.partNo !== partNo);
+        saveState();
+        renderPartsList();
+        showToast(`Removed ${partNo}`, 'info');
+      });
+    }
+
+    function confirmResetStock() {
+      if (stockItems.length === 0) return;
+      openConfirmDialog(
+        'Reset All Stock Counts',
+        'Clear all scanned Bajaj parts and quantities? (Your remembered part name catalog will be kept.)',
+        () => {
+          stockItems = [];
+          scanHistoryLog = [];
+          document.getElementById('lastScanOverlay').classList.add('hidden');
+          saveState();
+          renderPartsList();
+          showToast('Stock list cleared.', 'info');
+        }
+      );
+    }
+
+    /**
+     * ============================================================================
+     * Part Name Modal (Saves to both current list & persistent Bajaj Catalog)
+     * ============================================================================
+     */
+    function openPartNameModal(partNo, currentName) {
+      activeModalPartNo = partNo;
+      document.getElementById('modalPartNoDisplay').textContent = partNo;
+      const input = document.getElementById('modalPartNameInput');
+      input.value = currentName || '';
+      document.getElementById('partNameModal').classList.remove('hidden');
+      setTimeout(() => input.focus(), 60);
+    }
+
+    function closePartNameModal() {
+      activeModalPartNo = null;
+      document.getElementById('partNameModal').classList.add('hidden');
+    }
+
+    function savePartNameFromModal(e) {
+      e.preventDefault();
+      if (!activeModalPartNo) return;
+      const enteredName = document.getElementById('modalPartNameInput').value.trim();
+      const finalName = enteredName || 'Unnamed Bajaj Part';
+
+      if (enteredName) {
+        partCatalog[activeModalPartNo] = enteredName;
+      }
+
+      const item = stockItems.find((i) => i.partNo === activeModalPartNo);
+      if (item) {
+        item.partName = finalName;
+      }
+
+      saveState();
+      renderPartsList();
+      closePartNameModal();
+      showToast(`Saved: ${activeModalPartNo} → ${finalName}`, 'success');
+    }
+
+    /**
+     * ============================================================================
+     * Direct Excel (.xlsx) Export & Import via SheetJS
+     * ============================================================================
+     */
+    function exportToExcel() {
+      if (stockItems.length === 0) {
+        showToast('Scan at least one Bajaj part before exporting to Excel.', 'error');
+        return;
+      }
+
+      try {
+        // Sheet 1: Bajaj Parts Stock Summary
+        const summaryRows = stockItems.map((item, idx) => ({
+          'S.No': idx + 1,
+          'Part Number / Barcode': item.partNo,
+          'Part Name': item.partName,
+          'Quantity': Number(item.qty),
+          'Last Updated': item.lastUpdated || ''
+        }));
+
+        // Append Totals Row at the bottom
+        const totalUnits = stockItems.reduce((sum, i) => sum + (Number(i.qty) || 0), 0);
+        summaryRows.push({
+          'S.No': '',
+          'Part Number / Barcode': 'TOTAL',
+          'Part Name': `${stockItems.length} Unique Parts`,
+          'Quantity': totalUnits,
+          'Last Updated': ''
+        });
+
+        const wb = XLSX.utils.book_new();
+        const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
+
+        // Auto-size columns cleanly for Excel
+        wsSummary['!cols'] = [
+          { wch: 7 },   // S.No
+          { wch: 24 },  // Part Number
+          { wch: 36 },  // Part Name
+          { wch: 12 },  // Quantity
+          { wch: 22 }   // Last Updated
+        ];
+
+        XLSX.utils.book_append_sheet(wb, wsSummary, 'Bajaj Parts Stock');
+
+        // Sheet 2: Scan Activity Log (if scans occurred this session)
+        if (scanHistoryLog.length > 0) {
+          const logRows = scanHistoryLog.map((entry, idx) => ({
+            'S.No': idx + 1,
+            'Time': entry.time,
+            'Part Number': entry.partNo,
+            'Part Name': entry.partName,
+            'Action': entry.action,
+            'Change': entry.change,
+            'Stock After Scan': entry.resultingQty
+          }));
+          const wsLog = XLSX.utils.json_to_sheet(logRows);
+          wsLog['!cols'] = [
+            { wch: 7 }, { wch: 22 }, { wch: 22 }, { wch: 32 }, { wch: 12 }, { wch: 10 }, { wch: 16 }
+          ];
+          XLSX.utils.book_append_sheet(wb, wsLog, 'Scan Log');
+        }
+
+        const dateStr = new Date().toISOString().slice(0, 10);
+        XLSX.writeFile(wb, `Bajaj_Parts_Stock_${dateStr}.xlsx`);
+        showToast(`Downloaded Bajaj_Parts_Stock_${dateStr}.xlsx`, 'success');
+      } catch (err) {
+        console.error('Excel export failed:', err);
+        showToast('Failed to generate Excel file.', 'error');
+      }
+    }
+
+    /**
+     * Import an existing Bajaj Parts Excel (.xlsx / .xls / .csv) sheet
+     * Populates part catalog names and optionally loads existing quantities
+     */
+    function handleExcelImport(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+
+          let matchedCount = 0;
+          const nowStr = new Date().toLocaleString([], {
+            year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit'
+          });
+
+          rows.forEach((row) => {
+            // Flexibly detect Part Number, Part Name, and Quantity columns
+            const keys = Object.keys(row);
+            const partNoKey = keys.find((k) => /part\s*(no|number|code)|barcode|sku|id/i.test(k)) || keys[0];
+            const nameKey = keys.find((k) => /part\s*name|name|desc|description|item/i.test(k)) || keys[1];
+            const qtyKey = keys.find((k) => /qty|quantity|stock|count/i.test(k));
+
+            const rawPartNo = String(row[partNoKey] || '').trim().toUpperCase();
+            if (!rawPartNo || rawPartNo === 'TOTAL') return;
+
+            const rawName = nameKey ? String(row[nameKey] || '').trim() : '';
+            if (rawName) {
+              partCatalog[rawPartNo] = rawName;
+            }
+
+            if (qtyKey !== undefined && row[qtyKey] !== '') {
+              const qtyVal = Math.max(0, parseInt(row[qtyKey], 10) || 0);
+              const existing = stockItems.find((i) => i.partNo === rawPartNo);
+              if (existing) {
+                if (rawName) existing.partName = rawName;
+                existing.qty = qtyVal;
+                existing.lastUpdated = nowStr;
+              } else {
+                stockItems.push({
+                  partNo: rawPartNo,
+                  partName: rawName || 'Unnamed Bajaj Part',
+                  qty: qtyVal,
+                  lastUpdated: nowStr
+                });
+              }
+            }
+            matchedCount++;
+          });
+
+          saveState();
+          renderPartsList();
+          showToast(`Imported ${matchedCount} Bajaj parts from Excel!`, 'success');
+        } catch (err) {
+          console.error('Excel import error:', err);
+          showToast('Could not read Excel file. Check format (.xlsx / .csv).', 'error');
+        }
+        event.target.value = '';
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    /**
+     * ============================================================================
+     * Audio Beep, Haptic Vibration, Toast & Helpers
+     * ============================================================================
+     */
+    function triggerScanFeedback(isError = false) {
+      // Haptic vibration on mobile phones
+      if (navigator.vibrate) {
+        navigator.vibrate(isError ? [120, 60, 120] : 65);
+      }
+
+      if (!soundEnabled) return;
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = isError ? 'sawtooth' : 'sine';
+        osc.frequency.setValueAtTime(isError ? 240 : 1040, ctx.currentTime);
+        gain.gain.setValueAtTime(0.16, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.13);
+      } catch (e) {
+        // Ignore audio context restrictions
+      }
+    }
+
+    function toggleSound() {
+      soundEnabled = !soundEnabled;
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ soundEnabled }));
+      updateSoundIcon();
+      if (soundEnabled) triggerScanFeedback(false);
+    }
+
+    function updateSoundIcon() {
+      document.getElementById('soundOnIcon').classList.toggle('hidden', !soundEnabled);
+      document.getElementById('soundOffIcon').classList.toggle('hidden', soundEnabled);
+    }
+
+    function showToast(msg, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const el = document.createElement('div');
+      const colors = {
+        success: 'bg-emerald-950 border-emerald-500 text-emerald-100',
+        error: 'bg-rose-950 border-rose-500 text-rose-100',
+        info: 'bg-slate-900 border-sky-500 text-slate-100'
+      };
+      el.className = `pointer-events-auto px-4 py-2.5 rounded-xl border-l-4 shadow-xl text-xs font-semibold transition-all duration-300 ${colors[type] || colors.info}`;
+      el.textContent = msg;
+      container.appendChild(el);
+      setTimeout(() => {
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 250);
+      }, 2800);
+    }
+
+    function openConfirmDialog(title, msg, onConfirm) {
+      document.getElementById('confirmTitle').textContent = title;
+      document.getElementById('confirmMsg').textContent = msg;
+      document.getElementById('confirmOkBtn').onclick = () => {
+        closeConfirmDialog();
+        onConfirm();
+      };
+      document.getElementById('confirmDialog').classList.remove('hidden');
+    }
+
+    function closeConfirmDialog() {
+      document.getElementById('confirmDialog').classList.add('hidden');
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function escapeAttr(str) {
+      return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+  </script>
+</body>
+</html>
